@@ -29,18 +29,6 @@
 
 package scram
 
-/*
-#cgo LDFLAGS: -lidn
-#include <stdlib.h>
-#include "stringprep.h"
-
-int nameprep(char *in, size_t maxlen) {
-	return stringprep(in, maxlen, 0, stringprep_nameprep);
-}
-
-*/
-import "C"
-
 import (
 	"bytes"
 	"crypto/hmac"
@@ -49,23 +37,22 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
-	"fmt"
 	"log"
 	"net"
 	"strconv"
 	"strings"
-	"unsafe"
+	"github.com/xdg/stringprep"
 )
 
 func Authenticate(conn net.Conn, user, pass string) error {
 	log.Println("Scram Authenticate called..")
 
-	prepUser, err := stringprep(user)
+	prepUser, err := stringprep.SASLprep.Prepare(user)
 	if err != nil {
 		return err
 	}
 
-	prepPass, err := stringprep(pass)
+	prepPass, err := stringprep.SASLprep.Prepare(pass)
 	if err != nil {
 		return err
 	}
@@ -295,14 +282,3 @@ func exor(a, b []byte) []byte {
 	return buffer.Bytes()
 }
 
-func stringprep(str string) (string, error) {
-	var cStr *C.char = C.CString(str)
-	defer C.free(unsafe.Pointer(cStr))
-	errCode := C.nameprep(cStr, C.size_t(len(str)*2))
-	if errCode == 0 {
-		return C.GoString(cStr), nil
-	} else {
-		err := fmt.Errorf("stringprep error: %v", errCode)
-		return "", err
-	}
-}

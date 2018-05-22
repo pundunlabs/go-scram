@@ -68,13 +68,13 @@ func Authenticate(conn net.Conn, user, pass string) error {
 	}
 
 	buffer := make([]byte, 1024)
-	_, err = conn.Read(buffer)
+	n, err := conn.Read(buffer)
 
 	if err != nil {
 		return err
 	}
-
-	serverFirstMsg := string(bytes.Trim(buffer, "\x00"))
+	buffer = buffer[:n]
+	serverFirstMsg := string(buffer)
 	state["server_first_msg"] = serverFirstMsg
 
 	state = parse(buffer, state)
@@ -85,8 +85,11 @@ func Authenticate(conn net.Conn, user, pass string) error {
 	}
 
 	buffer = make([]byte, 1024)
-	_, err = conn.Read(buffer)
-	state = parse(buffer, state)
+	n, err = conn.Read(buffer)
+	if err != nil {
+	    return err
+	}
+	state = parse(buffer[:n], state)
 
 	err = verifyServerSignature(state)
 
@@ -191,7 +194,7 @@ func clientProof(saltedPassword, authMsg []byte) string {
 	storedKey := sha1.Sum(clientKey)
 
 	mac2 := hmac.New(sha1.New, storedKey[:])
-	mac2.Write(bytes.Trim(authMsg, "\x00"))
+	mac2.Write(authMsg)
 	clientSignature := mac2.Sum(nil)
 
 	clientProof := exor(clientKey, clientSignature)
@@ -236,7 +239,7 @@ func nonce() (string, error) {
 func parse(buf []byte, state map[string]string) map[string]string {
 	tokens := bytes.Split(buf, []byte(","))
 	for i := range tokens {
-		state[string(tokens[i][:1])] = string(bytes.Trim(tokens[i][2:], "\x00"))
+		state[string(tokens[i][:1])] = string(tokens[i][2:])
 	}
 	return state
 }

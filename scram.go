@@ -36,47 +36,28 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
-	"encoding/binary"
-	"io"
 	"errors"
 	"log"
-	"net"
 	"strconv"
 	"strings"
 	"github.com/xdg/stringprep"
 )
 
-func Send(conn net.Conn, data []byte) (int, error) {
-	len := uint32(len(data))
-	header := make([]byte, 4)
-	binary.BigEndian.PutUint32(header, len)
-	conn.Write(header)
-	return conn.Write(data)
+type ScramConn struct {
+    Send func([]byte) (int, error)
+    Read func() ([]byte, error)
 }
 
-func Read(conn net.Conn) ([]byte, error) {
-	lenBuf := make([]byte, 4)
-	n, herr := conn.Read(lenBuf)
-
-	if n != 4 {
-	    return nil, errors.New("could not read packet header")
-	}
-
-	if herr != nil {
-	    return nil, herr
-	}
-
-	len := binary.BigEndian.Uint32(lenBuf)
-	buf := make([]byte, len)
-	_, derr := io.ReadFull(conn, buf)
-	if derr != nil {
-	    return nil, derr
-	}
-
-	return buf, nil
+type ScramConnI interface {
+    send([]byte) (int, error)
+    read()([]byte, error)
 }
 
-func Authenticate(conn net.Conn, user, pass string) error {
+func (s ScramConn) send(data []byte) (int, error) { return s.Send(data)}
+func (s ScramConn) read() ([]byte, error) { return s.Read()}
+
+
+func Authenticate(conn ScramConnI, user, pass string) error {
 	log.Println("Scram Authenticate called..")
 
 	prepUser, err := stringprep.SASLprep.Prepare(user)
@@ -99,7 +80,7 @@ func Authenticate(conn net.Conn, user, pass string) error {
 		return err
 	}
 
-	buffer, err := Read(conn)
+	buffer, err := conn.read()
 
 	if err != nil {
 		return err
@@ -115,7 +96,7 @@ func Authenticate(conn net.Conn, user, pass string) error {
 		return err
 	}
 
-	buffer, buferr := Read(conn)
+	buffer, buferr := conn.read()
 	if buferr != nil {
 	    return buferr
 	}
@@ -129,7 +110,7 @@ func Authenticate(conn net.Conn, user, pass string) error {
 	return err
 }
 
-func clientFirstMessage(conn net.Conn, state map[string]string) (map[string]string, error) {
+func clientFirstMessage(conn ScramConnI, state map[string]string) (map[string]string, error) {
 	h := gs2Header()
 	state, err := clientFirstMessageBare(state)
 
@@ -140,7 +121,7 @@ func clientFirstMessage(conn net.Conn, state map[string]string) (map[string]stri
 	buffer := bytes.NewBufferString(h)
 	buffer.WriteString(state["client_first_msg_bare"])
 
-	_, err = Send(conn, buffer.Bytes())
+	_, err = conn.send(buffer.Bytes())
 
 	return state, err
 }
@@ -168,7 +149,7 @@ func clientFirstMessageBare(state map[string]string) (map[string]string, error) 
 	return state, err
 }
 
-func clientFinalMessage(conn net.Conn, state map[string]string) (map[string]string, error) {
+func clientFinalMessage(conn ScramConnI, state map[string]string) (map[string]string, error) {
 	iterationCount, err := strconv.ParseInt(state["i"], 10, 64)
 	if err != nil {
 		log.Printf("error at parsing iteration count: %v", err)
@@ -200,7 +181,7 @@ func clientFinalMessage(conn net.Conn, state map[string]string) (map[string]stri
 	clientFinalMsg.WriteString(",p=")
 	clientFinalMsg.WriteString(clientProof)
 
-	_, err = Send(conn, clientFinalMsg.Bytes())
+	_, err = conn.send(clientFinalMsg.Bytes())
 	state["client_final_msg"] = clientFinalMsg.String()
 
 	return state, err

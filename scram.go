@@ -36,6 +36,8 @@ import (
 	"crypto/sha1"
 	"encoding/base64"
 	"encoding/hex"
+	"encoding/binary"
+	"io"
 	"errors"
 	"log"
 	"net"
@@ -43,6 +45,36 @@ import (
 	"strings"
 	"github.com/xdg/stringprep"
 )
+
+func Send(conn net.Conn, data []byte) (int, error) {
+	len := uint32(len(data))
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, len)
+	conn.Write(header)
+	return conn.Write(data)
+}
+
+func Read(conn net.Conn) ([]byte, error) {
+	lenBuf := make([]byte, 4)
+	n, herr := conn.Read(lenBuf)
+
+	if n != 4 {
+	    return nil, errors.New("could not read packet header")
+	}
+
+	if herr != nil {
+	    return nil, herr
+	}
+
+	len := binary.BigEndian.Uint32(lenBuf)
+	buf := make([]byte, len)
+	_, derr := io.ReadFull(conn, buf)
+	if derr != nil {
+	    return nil, derr
+	}
+
+	return buf, nil
+}
 
 func Authenticate(conn net.Conn, user, pass string) error {
 	log.Println("Scram Authenticate called..")
@@ -67,13 +99,12 @@ func Authenticate(conn net.Conn, user, pass string) error {
 		return err
 	}
 
-	buffer := make([]byte, 1024)
-	n, err := conn.Read(buffer)
+	buffer, err := Read(conn)
 
 	if err != nil {
 		return err
 	}
-	buffer = buffer[:n]
+
 	serverFirstMsg := string(buffer)
 	state["server_first_msg"] = serverFirstMsg
 
@@ -84,12 +115,11 @@ func Authenticate(conn net.Conn, user, pass string) error {
 		return err
 	}
 
-	buffer = make([]byte, 1024)
-	n, err = conn.Read(buffer)
-	if err != nil {
-	    return err
+	buffer, buferr := Read(conn)
+	if buferr != nil {
+	    return buferr
 	}
-	state = parse(buffer[:n], state)
+	state = parse(buffer, state)
 
 	err = verifyServerSignature(state)
 
@@ -110,7 +140,7 @@ func clientFirstMessage(conn net.Conn, state map[string]string) (map[string]stri
 	buffer := bytes.NewBufferString(h)
 	buffer.WriteString(state["client_first_msg_bare"])
 
-	_, err = conn.Write(buffer.Bytes())
+	_, err = Send(conn, buffer.Bytes())
 
 	return state, err
 }
@@ -170,7 +200,7 @@ func clientFinalMessage(conn net.Conn, state map[string]string) (map[string]stri
 	clientFinalMsg.WriteString(",p=")
 	clientFinalMsg.WriteString(clientProof)
 
-	_, err = conn.Write(clientFinalMsg.Bytes())
+	_, err = Send(conn, clientFinalMsg.Bytes())
 	state["client_final_msg"] = clientFinalMsg.String()
 
 	return state, err

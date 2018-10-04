@@ -48,7 +48,7 @@ type ScramConn struct {
     Read func() ([]byte, error)
 }
 
-type ScramConnI interface {
+type Scram interface {
     send([]byte) (int, error)
     read()([]byte, error)
 }
@@ -57,7 +57,7 @@ func (s ScramConn) send(data []byte) (int, error) { return s.Send(data)}
 func (s ScramConn) read() ([]byte, error) { return s.Read()}
 
 
-func Authenticate(conn ScramConnI, user, pass string) error {
+func Authenticate(conn Scram, user, pass string) error {
 	log.Println("Scram Authenticate called..")
 
 	prepUser, err := stringprep.SASLprep.Prepare(user)
@@ -110,7 +110,7 @@ func Authenticate(conn ScramConnI, user, pass string) error {
 	return err
 }
 
-func clientFirstMessage(conn ScramConnI, state map[string]string) (map[string]string, error) {
+func clientFirstMessage(conn Scram, state map[string]string) (map[string]string, error) {
 	h := gs2Header()
 	state, err := clientFirstMessageBare(state)
 
@@ -149,7 +149,7 @@ func clientFirstMessageBare(state map[string]string) (map[string]string, error) 
 	return state, err
 }
 
-func clientFinalMessage(conn ScramConnI, state map[string]string) (map[string]string, error) {
+func clientFinalMessage(conn Scram, state map[string]string) (map[string]string, error) {
 	iterationCount, err := strconv.ParseInt(state["i"], 10, 64)
 	if err != nil {
 		log.Printf("error at parsing iteration count: %v", err)
